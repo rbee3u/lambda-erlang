@@ -1,0 +1,11 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -smp enable verbose
+
+
+main(_) ->
+    {ok, _} = leex:file("lambda_scanner.xrl"),
+    {ok, _} = compile:file(lambda_scanner),
+    {ok, _} = yecc:file("lambda_parse.yrl"),
+    {ok, _} = compile:file(lambda_parse),
+    ok.
