@@ -1,0 +1,159 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -smp enable verbose
+
+
+main(Args) ->
+    try opts(Args, #{}) of
+    #{file := File} = Opts ->
+        try
+            {ok, Binary} = file:read_file(File),
+            String = erlang:binary_to_list(Binary),
+            Result = show(eval(term(String), Opts), Opts),
+            io:format("Result:~n~s~n", [Result]),
+            halt(0)
+        catch Class:Reason:Stacktrace ->
+            io:format("Runtime Error:~n", []),
+            io:format("Class = ~p~n", [Class]),
+            io:format("Reason = ~p~n", [Reason]),
+            io:format("Stacktrace = ~p~n", [Stacktrace]),
+            halt(1)
+        end;
+    #{help := true} -> usage(), halt(0);
+    _               -> usage(), halt(1)
+    catch _:_       -> usage(), halt(1)
+    end.
+
+
+usage() ->
+    io:format("usage: lambda [--help] [--full] [--step] <file>~n").
+
+
+opts(["--help" | T], Acc) -> opts(T, Acc#{help => true});
+opts(["--full" | T], Acc) -> opts(T, Acc#{full => true});
+opts(["--step" | T], Acc) -> opts(T, Acc#{step => 0});
+opts([File], Acc) -> Acc#{file => File}; opts(_, Acc) -> Acc.
+
+
+term(String) when is_list(String) ->
+    {ok, Tokens, _} = lambda_scanner:string(String),
+    {ok, LambdaAst} = lambda_parse:parse(Tokens),
+    term(prep(LambdaAst));
+term({var, {_, _, X}}) -> {var, X};
+term({abs, {_, _, X}, E}) -> {abs, X, term(E)};
+term({app, F, A}) -> {app, term(F), term(A)}.
+
+
+prep([{def, X, E} | T]) -> {app, {abs, X, prep(T)}, E};
+prep([Expression]) -> Expression.
+
+
+show(T, #{full := true}) -> lists:flatten(full(T));
+show(T,               _) -> lists:flatten(abbr(T)).
+
+full({var, X})    -> X;
+full({abs, X, E}) -> ["(", "\\", X, ".", full(E), ")"];
+full({app, F, A}) -> ["(", full(F), " ", full(A), ")"].
+
+abbr({var, X})    -> X;
+abbr({abs, X, E}) -> ["\\", X, ".", abbr(E)];
+abbr({app, F, A}) -> [helpf(F), " ", helpa(A)].
+
+helpf({abs, _, _} = F) -> ["(", abbr(F), ")"];
+helpf({app, F, {abs, _, _} = A}) ->
+    [helpf(F), " ", "(", helpa(A), ")"];
+helpf({app, F, A}) -> [helpf(F), " ", helpa(A)];
+helpf({var, _}    = F) -> abbr(F).
+
+helpa({app, _, _} = A) -> ["(", abbr(A), ")"];
+helpa({abs, _, _} = A) -> abbr(A);
+helpa({var, _}    = A) -> abbr(A).
+
+
+eval(T, Opts) ->
+    Opts2 = case Opts of
+    #{step := Step} ->
+        io:format("Step ~w:~n~s~n", [Step, show(T, Opts)]),
+        Opts#{step => Step + 1}; _ -> Opts
+    end,
+    Lgh = maps:get(lgh, Opts, infinity),
+    case is_tuple(T2 = beta_reduction(T)) of
+    false -> T; true -> case Lgh2 = lgh(T2) of
+        Lgh ->
+            case alpha_congruent(T, T2) of
+            true -> T; _ -> eval(T2, Opts2#{lgh => Lgh2})
+            end;
+        _ ->
+            eval(T2, Opts2#{lgh => Lgh2})
+    end end.
+
+
+lgh({var, _}) -> 1;
+lgh({app, F, A}) -> lgh(F) + lgh(A);
+lgh({abs, _, E}) -> 1 + lgh(E).
+
+
+alpha_congruent({var, X1}, {var, X2}) -> X1 =:= X2;
+alpha_congruent({app, F1, A1}, {app, F2, A2}) ->
+    alpha_congruent(F1, F2) and alpha_congruent(A1, A2);
+alpha_congruent({abs, X, E1}, {abs, X, E2}) ->
+    alpha_congruent(E1, E2);
+alpha_congruent({abs, X1, E1}, {abs, X2, E2}) ->
+    Z = newz(maps:merge(free(E1), free(E2))),
+    alpha_congruent(subs(E1, X1, {var, Z}), subs(E2, X2, {var, Z}));
+alpha_congruent(_, _) -> false.
+
+
+subs({var, X}, X, R) -> R;
+subs({var, _} = T, _, _) -> T;
+subs({abs, X, _} = T, X, _) -> T;
+subs({abs, Y, E} = T, X, R) ->
+    IsXFreeInE = maps:is_key(X, FreeE = free(E)),
+    IsYFreeInR = maps:is_key(Y, FreeR = free(R)),
+    if not IsXFreeInE ->
+        T;
+    not IsYFreeInR ->
+        {abs, Y, subs(E, X, R)};
+    true ->
+        Z = newz(maps:merge(FreeE, FreeR)),
+        {abs, Z, subs(subs(E, Y, {var, Z}), X, R)}
+    end;
+subs({app, F, A}, X, R) ->
+    {app, subs(F, X, R), subs(A, X, R)}.
+
+
+free({var, X}) -> #{X => true};
+free({app, F, A}) ->
+    maps:merge(free(F), free(A));
+free({abs, X, E}) ->
+    maps:remove(X, free(E)).
+
+
+newz(Free) -> newz(Free, [$a]).
+newz(Free, Key) ->
+    case maps:is_key(Key, Free) of
+    true ->
+        newz(Free, next(Key)); _ -> Key
+    end.
+
+next(Key) ->
+    case lists:reverse(Key) of
+    [$z | Rev] -> lists:reverse(Rev, [$A]);
+    [$Z | _Rev] -> Key ++ [$a];
+    [C | Rev] -> lists:reverse(Rev, [C+1])
+    end.
+
+
+beta_reduction({var, _}) -> nothing;
+beta_reduction({app, {abs, X, E}, A}) ->
+    subs(E, X, A);
+beta_reduction({app, F, A}) ->
+    case is_tuple(F2 = beta_reduction(F)) of
+    true -> {app, F2, A}; false ->
+    case is_tuple(A2 = beta_reduction(A)) of
+    true -> {app, F, A2}; false ->
+    nothing end end;
+beta_reduction({abs, X, E}) ->
+    case is_tuple(E2 = beta_reduction(E)) of
+    true -> {abs, X, E2}; false -> nothing
+    end.

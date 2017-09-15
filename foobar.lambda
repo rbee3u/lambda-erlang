@@ -1,0 +1,54 @@
+// Arithmetic
+succ = \n.\f.\x.f (n f x);
+0 = \f.\x.x;
+1 = succ 0;
+2 = succ 1;
+3 = succ 2;
+4 = succ 3;
+5 = succ 4;
+6 = succ 5;
+7 = succ 6;
+8 = succ 7;
+9 = succ 8;
+plus = \m.\n.m succ n;
+mult = \m.\n.\f.m (n f);
+pow = \b.\e.e b;
+pred = \n.\f.\x.n (\g.\h.h (g f)) (\u.x) (\u.u);
+sub = \m.\n.n pred m;
+
+
+// Boolean Logic
+true = \x.\y.x;
+false = \x.\y.y;
+and = \p.\q.p q p;
+or = \p.\q.p p q;
+not = \p.p false true;
+if = \p.\a.\b.p a b;
+iszero = \n.n (\x.false) true;
+
+
+// Data Structure
+cons = \x.\y.\f.f x y;
+car = \p.p \x.\y.x;
+cdr = \p.p \x.\y.y;
+nil = \x.true;
+null = \p.p \x.\y.false;
+
+
+// Recursion
+Y = \g.(\x.g (x x)) (\x.g (x x));
+len = Y \f.\s.if (null s) 0 (succ (f (cdr s)));
+
+
+
+
+// Main Block
+L0 = nil;
+L1 = cons 1 L0;
+L2 = cons 2 L1;
+L3 = cons 3 L2;
+L4 = cons 4 L3;
+
+
+len L4
+
