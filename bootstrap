@@ -1,11 +1,20 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable verbose
 
 
 main(_) ->
-    {ok, _} = leex:file("lambda_scanner.xrl"),
-    {ok, _} = compile:file(lambda_scanner),
-    {ok, _} = yecc:file("lambda_parse.yrl"),
-    {ok, _} = compile:file(lambda_parse),
-    ok.
+    check("leex lambda_scanner.xrl", leex:file("lambda_scanner.xrl")),
+    check("compile lambda_scanner.erl",
+          compile:file(lambda_scanner, [report_errors, report_warnings])),
+    check("yecc lambda_parse.yrl", yecc:file("lambda_parse.yrl")),
+    check("compile lambda_parse.erl",
+          compile:file(lambda_parse, [report_errors, report_warnings])).
+
+
+%% Each step prints its own diagnostics; this names the failing step and
+%% exits with status 1 instead of a badmatch crash.
+check(_Step, {ok, _}) ->
+    ok;
+check(Step, _Error) ->
+    io:format(standard_error, "bootstrap: ~ts failed~n", [Step]),
+    halt(1).

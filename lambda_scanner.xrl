@@ -1,13 +1,16 @@
 Definitions.
-L = [0-9A-Za-z_]
-WS = ([\000-\s]|//.*)
+SYMBOL_CHAR = [0-9A-Za-z_]
+SPACE_OR_COMMENT = ([\000-\s]|//.*)
 
 Rules.
-{L}+
+{SYMBOL_CHAR}+
     : {token, {symbol, TokenLine, TokenChars}}.
 \\|\.|\(|\)|=|;
     : {token, {list_to_atom(TokenChars), TokenLine}}.
-{WS}+
+%% Whitespace and `//` comments are skipped by one rule. The wildcard in
+%% `//.*` stops only at a newline, so comments may contain any other Unicode
+%% character.
+{SPACE_OR_COMMENT}+
     : skip_token.
 
 Erlang code.
