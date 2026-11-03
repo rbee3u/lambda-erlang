@@ -28,6 +28,8 @@ iszero = \n.n (\x.false) true;
 
 
 // Pairs and lists
+// Lists are cons pairs ending in nil. car and cdr project any pair; check null
+// before applying them to a list, since nil is not a cons pair.
 cons = \x.\y.\f.f x y;
 car = \p.p \x.\y.x;
 cdr = \p.p \x.\y.y;

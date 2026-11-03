@@ -72,7 +72,17 @@ id const
 
 The final expression takes no trailing `;`, and a file that only defines names is an error.
 
-Definitions are sequential, not recursive: a definition body can refer only to definitions that come before it, while the final expression can refer to all of them. Defining a name twice is allowed, and the most recent definition is the one that applies. Definitions become nested abstractions, which `--step` shows in step 0.
+Definitions are sequential and non-recursive. Each definition is in scope for later definitions and the final expression, but not for its own body. Redefining a name shadows its earlier definition only in the expressions that follow; it does not change earlier definition bodies.
+
+Unbound names remain free rather than causing an error. A later definition does not bind an earlier occurrence of its name:
+
+```text
+x = y;
+y = z;
+x
+```
+
+This evaluates to the free variable `y`. Definitions become nested abstractions and applications, which `--step` shows in step 0.
 
 Line comments start with `//` and run to the end of the line.
 
@@ -80,7 +90,7 @@ Line comments start with `//` and run to the end of the line.
 
 Requirements:
 
-- Erlang/OTP
+- Erlang/OTP with `escript`, the compiler, and `parsetools` (`leex` and `yecc`)
 
 Installation guide:
 [Erlang Installation Guide](https://www.erlang.org/doc/system/installation_guide.html)
@@ -94,7 +104,7 @@ chmod a+x bootstrap lambda
 ./bootstrap
 ```
 
-The generated `.erl` modules and their `.beam` files are ignored by git; re-run `./bootstrap` after editing `lambda_scanner.xrl` or `lambda_parse.yrl`.
+The generated `.erl` modules and their `.beam` files are ignored by git; re-run `./bootstrap` from the repository root after editing `lambda_scanner.xrl` or `lambda_parse.yrl`. The evaluator reports an error if a module is missing or its grammar source is newer than its `.beam` file.
 
 ## Usage
 
@@ -112,15 +122,17 @@ usage: lambda [--help] [--full] [--step] <file>
 
 Options:
 
-- `--help` shows usage
+- `--help` shows usage; no source file is required
 - `--full` uses fully parenthesized output instead of the abbreviated form
-- `--step` prints every term in the reduction sequence, including the final normal form, which is then repeated on the result line
+- `--step` prints the initial term as step 0 and every subsequent beta-reduction step, including the final normal form, which is then repeated after `Result:`
 
-Printed terms are themselves valid source, so a result can be fed back to the evaluator.
+Printed terms are themselves valid source. To evaluate a result again, save only the expression following `Result:` to a source file; the `Result:` and `Step N:` headers are not valid source.
 
 On error, a message is written to standard error and the process exits with status 1.
 
-Terms without a normal form do not terminate; interrupt the run with `Ctrl+C`. A diverging term usually keeps growing as it reduces, so memory use rises until the run is interrupted.
+Reduction continues inside abstraction bodies and skips unused arguments. For example, `(\x.y) ((\x.x x) (\x.x x))` evaluates to `y` even though its argument has no normal form.
+
+Terms without a normal form do not terminate; interrupt the run with `Ctrl+C`. There is no reduction-step limit. A diverging term may repeat unchanged, as `(\x.x x) (\x.x x)` does, or grow and consume increasing memory.
 
 ## Example
 
@@ -133,14 +145,32 @@ Result:
 
 That result is the Church numeral 4, the length of the encoded list.
 
-A tiny example:
+To trace a smaller program, save this as `identity.lambda`:
 
 ```text
 id = \x.x;
 id y
 ```
 
-This prints `y`: the name is never bound, so it stays free.
+Run it with `--step`:
+
+```sh
+./lambda --step identity.lambda
+```
+
+```text
+Step 0:
+(\id.id y) \x.x
+Step 1:
+(\x.x) y
+Step 2:
+y
+Result:
+y
+```
+
+Step 0 shows the definition converted to an abstraction and application. The
+result is `y`: the name is never bound, so it stays free.
 
 To avoid capture, the evaluator renames a binder when needed, so a result may use a name that was not in the source; for example, `(\x.\y.x) y` prints `\a.y`.
 
